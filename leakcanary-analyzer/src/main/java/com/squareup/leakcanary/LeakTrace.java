@@ -16,10 +16,8 @@
 package com.squareup.leakcanary;
 
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.List;
-
-import static java.util.Collections.unmodifiableList;
+import java.util.Map;
 
 /**
  * A chain of references that constitute the shortest strong reference path from a leaking instance
@@ -28,9 +26,11 @@ import static java.util.Collections.unmodifiableList;
 public final class LeakTrace implements Serializable {
 
   public final List<LeakTraceElement> elements;
+  public final Map<LeakTraceElement, Reachability> expectedReachability;
 
-  LeakTrace(List<LeakTraceElement> elements) {
-    this.elements = unmodifiableList(new ArrayList<>(elements));
+  LeakTrace(List<LeakTraceElement> elements, Map<LeakTraceElement, Reachability> expectedReachability) {
+    this.elements = elements;
+    this.expectedReachability = expectedReachability;
   }
 
   @Override public String toString() {

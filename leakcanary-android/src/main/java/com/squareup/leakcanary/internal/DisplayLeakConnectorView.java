@@ -29,19 +29,31 @@ public final class DisplayLeakConnectorView extends View {
 
   private static final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private static final Paint rootPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private static final Paint reachablePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private static final Paint unreachablePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private static final Paint leakPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private static final Paint clearPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
   static {
     iconPaint.setColor(LeakCanaryUi.LIGHT_GREY);
     rootPaint.setColor(LeakCanaryUi.ROOT_COLOR);
+    reachablePaint.setColor(LeakCanaryUi.REACHABLE_COLOR);
+    unreachablePaint.setColor(LeakCanaryUi.UNREACHEABLE_COLOR);
     leakPaint.setColor(LeakCanaryUi.LEAK_COLOR);
     clearPaint.setColor(Color.TRANSPARENT);
     clearPaint.setXfermode(LeakCanaryUi.CLEAR_XFER_MODE);
   }
 
   public enum Type {
-    START, NODE, END
+    START,
+    START_LAST_REACHABLE,
+    NODE_UNKNOWN,
+    NODE_FIRST_UNREACHABLE,
+    NODE_UNREACHABLE,
+    NODE_REACHABLE,
+    NODE_LAST_REACHABLE,
+    END,
+    END_FIRST_UNREACHABLE,
   }
 
   private Type type;
@@ -50,7 +62,7 @@ public final class DisplayLeakConnectorView extends View {
   public DisplayLeakConnectorView(Context context, AttributeSet attrs) {
     super(context, attrs);
 
-    type = Type.NODE;
+    type = Type.NODE_UNKNOWN;
   }
 
   @SuppressWarnings("SuspiciousNameCombination") @Override protected void onDraw(Canvas canvas) {
@@ -74,28 +86,65 @@ public final class DisplayLeakConnectorView extends View {
       float strokeSize = LeakCanaryUi.dpToPixel(4f, getResources());
 
       iconPaint.setStrokeWidth(strokeSize);
+      reachablePaint.setStrokeWidth(strokeSize);
+      unreachablePaint.setStrokeWidth(strokeSize);
+      leakPaint.setStrokeWidth(strokeSize);
       rootPaint.setStrokeWidth(strokeSize);
 
       switch (type) {
-        case NODE:
-          cacheCanvas.drawLine(halfWidth, 0, halfWidth, height, iconPaint);
+        case NODE_UNKNOWN:
+          cacheCanvas.drawLine(halfWidth, 0, halfWidth, height, leakPaint);
           cacheCanvas.drawCircle(halfWidth, halfHeight, halfWidth, iconPaint);
           cacheCanvas.drawCircle(halfWidth, halfHeight, thirdWidth, clearPaint);
           break;
-        case START:
+        case NODE_UNREACHABLE:
+          cacheCanvas.drawLine(halfWidth, 0, halfWidth, height, unreachablePaint);
+          cacheCanvas.drawCircle(halfWidth, halfHeight, halfWidth, unreachablePaint);
+          break;
+        case NODE_FIRST_UNREACHABLE:
+          cacheCanvas.drawLine(halfWidth, 0, halfWidth, halfHeight, leakPaint);
+          cacheCanvas.drawLine(halfWidth, halfHeight, halfWidth, height, unreachablePaint);
+          cacheCanvas.drawCircle(halfWidth, halfHeight, halfWidth, unreachablePaint);
+          break;
+        case NODE_REACHABLE:
+          cacheCanvas.drawLine(halfWidth, 0, halfWidth, height, reachablePaint);
+          cacheCanvas.drawCircle(halfWidth, halfHeight, halfWidth, reachablePaint);
+          break;
+        case NODE_LAST_REACHABLE:
+          cacheCanvas.drawLine(halfWidth, 0, halfWidth, halfHeight, reachablePaint);
+          cacheCanvas.drawLine(halfWidth, halfHeight, halfWidth, height, leakPaint);
+          cacheCanvas.drawCircle(halfWidth, halfHeight, halfWidth, reachablePaint);
+          break;
+        case START: {
           float radiusClear = halfWidth - strokeSize / 2f;
-          cacheCanvas.drawRect(0, 0, width, radiusClear, rootPaint);
+          cacheCanvas.drawRect(0, 0, width, radiusClear, reachablePaint);
           cacheCanvas.drawCircle(0, radiusClear, radiusClear, clearPaint);
           cacheCanvas.drawCircle(width, radiusClear, radiusClear, clearPaint);
-          cacheCanvas.drawLine(halfWidth, 0, halfWidth, halfHeight, rootPaint);
-          cacheCanvas.drawLine(halfWidth, halfHeight, halfWidth, height, iconPaint);
-          cacheCanvas.drawCircle(halfWidth, halfHeight, halfWidth, iconPaint);
-          cacheCanvas.drawCircle(halfWidth, halfHeight, thirdWidth, clearPaint);
+          cacheCanvas.drawLine(halfWidth, 0, halfWidth, halfHeight, reachablePaint);
+          cacheCanvas.drawLine(halfWidth, halfHeight, halfWidth, height, reachablePaint);
+          cacheCanvas.drawCircle(halfWidth, halfHeight, halfWidth, reachablePaint);
+          break;
+        }
+        case START_LAST_REACHABLE: {
+          float radiusClear = halfWidth - strokeSize / 2f;
+          cacheCanvas.drawRect(0, 0, width, radiusClear, reachablePaint);
+          cacheCanvas.drawCircle(0, radiusClear, radiusClear, clearPaint);
+          cacheCanvas.drawCircle(width, radiusClear, radiusClear, clearPaint);
+          cacheCanvas.drawLine(halfWidth, 0, halfWidth, halfHeight, reachablePaint);
+          cacheCanvas.drawLine(halfWidth, halfHeight, halfWidth, height, leakPaint);
+          cacheCanvas.drawCircle(halfWidth, halfHeight, halfWidth, reachablePaint);
+          break;
+        }
+        case END:
+          cacheCanvas.drawLine(halfWidth, 0, halfWidth, halfHeight, unreachablePaint);
+          cacheCanvas.drawCircle(halfWidth, halfHeight, halfWidth, unreachablePaint);
+          break;
+        case END_FIRST_UNREACHABLE:
+          cacheCanvas.drawLine(halfWidth, 0, halfWidth, halfHeight, leakPaint);
+          cacheCanvas.drawCircle(halfWidth, halfHeight, halfWidth, unreachablePaint);
           break;
         default:
-          cacheCanvas.drawLine(halfWidth, 0, halfWidth, halfHeight, iconPaint);
-          cacheCanvas.drawCircle(halfWidth, halfHeight, thirdWidth, leakPaint);
-          break;
+          throw new UnsupportedOperationException("Unknown type " + type);
       }
     }
     canvas.drawBitmap(cache, 0, 0, null);

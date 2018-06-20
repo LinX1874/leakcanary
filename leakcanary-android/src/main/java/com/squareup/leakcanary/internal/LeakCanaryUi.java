@@ -24,7 +24,9 @@ import static android.graphics.PorterDuff.Mode.CLEAR;
 final class LeakCanaryUi {
   static final int LIGHT_GREY = 0xFFbababa;
   static final int ROOT_COLOR = 0xFF84a6c5;
+  static final int REACHABLE_COLOR = 0xFF619759;
   static final int LEAK_COLOR = 0xFFb1554e;
+  static final int UNREACHEABLE_COLOR = 0xFFca7832;
 
   static final PorterDuffXfermode CLEAR_XFER_MODE = new PorterDuffXfermode(CLEAR);
 

@@ -16,6 +16,7 @@
 package com.squareup.leakcanary.internal;
 
 import android.content.Context;
+import android.support.annotation.NonNull;
 import android.text.Html;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -26,9 +27,7 @@ import com.squareup.leakcanary.Exclusion;
 import com.squareup.leakcanary.LeakTrace;
 import com.squareup.leakcanary.LeakTraceElement;
 import com.squareup.leakcanary.R;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import com.squareup.leakcanary.Reachability;
 
 import static com.squareup.leakcanary.LeakTraceElement.Holder.ARRAY;
 import static com.squareup.leakcanary.LeakTraceElement.Holder.THREAD;
@@ -41,7 +40,7 @@ final class DisplayLeakAdapter extends BaseAdapter {
 
   private boolean[] opened = new boolean[0];
 
-  private List<LeakTraceElement> elements = Collections.emptyList();
+  private LeakTrace leakTrace = null;
   private String referenceKey;
   private String referenceName = "";
 
@@ -64,22 +63,25 @@ final class DisplayLeakAdapter extends BaseAdapter {
       boolean isRoot = position == 1;
       boolean isLeakingInstance = position == getCount() - 1;
       LeakTraceElement element = getItem(position);
-      String htmlString = elementToHtmlString(element, isRoot, opened[position]);
+
+      Reachability reachability = leakTrace.expectedReachability.get(element);
+      boolean maybeLeakCause;
+      if (isLeakingInstance || reachability == Reachability.UNREACHABLE) {
+        maybeLeakCause = false;
+      } else {
+        LeakTraceElement nextElement = getItem(position + 1);
+        Reachability nextReachability = leakTrace.expectedReachability.get(nextElement);
+        maybeLeakCause = nextReachability != Reachability.REACHABLE;
+      }
+
+      String htmlString = elementToHtmlString(element, isRoot, opened[position], maybeLeakCause);
       if (isLeakingInstance && !referenceName.equals("") && opened[position]) {
         htmlString += " <font color='#919191'>" + referenceName + "</font>";
       }
       textView.setText(Html.fromHtml(htmlString));
 
       DisplayLeakConnectorView connector = findById(convertView, R.id.leak_canary_row_connector);
-      if (isRoot) {
-        connector.setType(DisplayLeakConnectorView.Type.START);
-      } else {
-        if (isLeakingInstance) {
-          connector.setType(DisplayLeakConnectorView.Type.END);
-        } else {
-          connector.setType(DisplayLeakConnectorView.Type.NODE);
-        }
-      }
+      connector.setType(getConnectorType(position));
       MoreDetailsView moreDetailsView = findById(convertView, R.id.leak_canary_row_more);
       moreDetailsView.setOpened(opened[position]);
     }
@@ -87,7 +89,55 @@ final class DisplayLeakAdapter extends BaseAdapter {
     return convertView;
   }
 
-  private String elementToHtmlString(LeakTraceElement element, boolean root, boolean opened) {
+  @NonNull private DisplayLeakConnectorView.Type getConnectorType(int position) {
+    boolean isRoot = position == 1;
+    if (isRoot) {
+      LeakTraceElement nextElement = getItem(position + 1);
+      Reachability nextReachability = leakTrace.expectedReachability.get(nextElement);
+      if (nextReachability != Reachability.REACHABLE) {
+        return DisplayLeakConnectorView.Type.START_LAST_REACHABLE;
+      }
+      return DisplayLeakConnectorView.Type.START;
+    } else {
+      boolean isLeakingInstance = position == getCount() - 1;
+      if (isLeakingInstance) {
+        LeakTraceElement previousElement = getItem(position - 1);
+        Reachability previousReachability = leakTrace.expectedReachability.get(previousElement);
+        if (previousReachability != Reachability.UNREACHABLE) {
+          return DisplayLeakConnectorView.Type.END_FIRST_UNREACHABLE;
+        }
+        return DisplayLeakConnectorView.Type.END;
+      } else {
+        LeakTraceElement element = getItem(position);
+        Reachability reachability = leakTrace.expectedReachability.get(element);
+        switch (reachability) {
+          case UNKNOWN:
+            return  DisplayLeakConnectorView.Type.NODE_UNKNOWN;
+          case REACHABLE:
+            LeakTraceElement nextElement = getItem(position + 1);
+            Reachability nextReachability = leakTrace.expectedReachability.get(nextElement);
+            if (nextReachability != Reachability.REACHABLE) {
+              return  DisplayLeakConnectorView.Type.NODE_LAST_REACHABLE;
+            } else {
+              return  DisplayLeakConnectorView.Type.NODE_REACHABLE;
+            }
+          case UNREACHABLE:
+            LeakTraceElement previousElement = getItem(position - 1);
+            Reachability previousReachability = leakTrace.expectedReachability.get(previousElement);
+            if (previousReachability != Reachability.UNREACHABLE) {
+              return  DisplayLeakConnectorView.Type.NODE_FIRST_UNREACHABLE;
+            } else {
+              return  DisplayLeakConnectorView.Type.NODE_UNREACHABLE;
+            }
+          default:
+            throw new IllegalStateException("Unknown value: " + reachability);
+        }
+      }
+    }
+  }
+
+  private String elementToHtmlString(LeakTraceElement element, boolean root, boolean opened,
+      boolean maybeLeakCause) {
     String htmlString = "";
 
     if (element.referenceName == null) {
@@ -124,7 +174,8 @@ final class DisplayLeakAdapter extends BaseAdapter {
     htmlString += styledClassName;
 
     if (element.referenceName != null) {
-      htmlString += ".<font color='#998bb5'>" + element.referenceName.replaceAll("<", "&lt;")
+      String color = maybeLeakCause ? "#b1554e" : "#998bb5";
+      htmlString += ".<font color='" + color + "'>" + element.referenceName.replaceAll("<", "&lt;")
           .replaceAll(">", "&gt;") + "</font>";
     } else {
       htmlString += " <font color='#f3cf83'>instance</font>";
@@ -160,8 +211,8 @@ final class DisplayLeakAdapter extends BaseAdapter {
     }
     this.referenceKey = referenceKey;
     this.referenceName = referenceName;
-    this.elements = new ArrayList<>(leakTrace.elements);
-    opened = new boolean[1 + elements.size()];
+    this.leakTrace = leakTrace;
+    opened = new boolean[1 + leakTrace.elements.size()];
     notifyDataSetChanged();
   }
 
@@ -171,14 +222,17 @@ final class DisplayLeakAdapter extends BaseAdapter {
   }
 
   @Override public int getCount() {
-    return 1 + elements.size();
+    if (leakTrace == null) {
+      return 1;
+    }
+    return 1 + leakTrace.elements.size();
   }
 
   @Override public LeakTraceElement getItem(int position) {
     if (getItemViewType(position) == TOP_ROW) {
       return null;
     }
-    return elements.get(position - 1);
+    return leakTrace.elements.get(position - 1);
   }
 
   @Override public int getViewTypeCount() {
